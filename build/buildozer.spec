@@ -23,3 +23,8 @@ android.manifest.intent_filters = assets/intent_filters.xml
 [buildozer]
 log_level = 2
 warn_on_root = 1
+
+# Add these lines to use the latest stable python-for-android toolchain
+# This will fix the libffi build issue
+p4a.branch = master
+p4a.url = https://github.com/kivy/python-for-android.git
