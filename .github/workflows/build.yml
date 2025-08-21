@@ -1,25 +1,78 @@
-[app]
-title = Netra
-package.name = netra
-package.domain = org.example
-source.dir = ..
-source.include_exts = py,png,jpg,kv,atlas,txt
-version = 0.1
-requirements = python3,kivy,httpx,tldextract,rapidfuzz,beautifulsoup4,certifi,pyjnius
-orientation = portrait
-icon.filename = %(source.dir)s/icon.png
-presplash.filename = %(source.dir)s/presplash.png
-fullscreen = 0
+name: Build apk
 
-android.permissions = INTERNET,ACCESS_NETWORK_STATE
-android.api = 34
-android.minapi = 21
-android.ndk = 25b
-android.build_tools = 34.0.0
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
-# Android intent filters
-android.manifest.intent_filters = assets/intent_filters.xml
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    name: Build Android APK
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-[buildozer]
-log_level = 2
-warn_on_root = 1
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-pip \
+          build-essential \
+          git \
+          python3 \
+          python3-dev \
+          ffmpeg \
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          zlib1g-dev \
+          wget \
+          unzip
+        pip install --upgrade -r requirements.txt
+        pip install --upgrade buildozer cython==0.29.34
+
+    - name: Set up Android SDK
+      run: |
+        echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+        mkdir -p $HOME/android-sdk/cmdline-tools
+        cd $HOME/android-sdk/cmdline-tools
+        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+        unzip cmdline-tools.zip
+        mv cmdline-tools latest
+        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+
+    - name: Install SDK packages
+      run: |
+        # Accept licenses and install required packages
+        mkdir -p $ANDROID_HOME/licenses
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
+        echo "84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
+        yes | sdkmanager --licenses --sdk_root=$ANDROID_HOME
+        sdkmanager --sdk_root=$ANDROID_HOME "build-tools;34.0.0" "platform-tools" "platforms;android-34" "cmdline-tools;latest"
+        echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
+
+    - name: Build with Buildozer
+      working-directory: ./build
+      run: |
+        # Set Buildozer config to use the pre-installed SDK
+        sed -i "s,^#*android.sdk_dir =.*,android.sdk_dir = $ANDROID_HOME," buildozer.spec
+        # Build the app
+        buildozer -v android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: build/bin/*.apk
